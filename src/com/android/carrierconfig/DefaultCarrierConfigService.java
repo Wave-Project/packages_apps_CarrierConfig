@@ -4,8 +4,10 @@ import android.annotation.Nullable;
 import android.content.Context;
 import android.os.Build;
 import android.os.PersistableBundle;
+import android.os.SystemProperties;
 import android.service.carrier.CarrierIdentifier;
 import android.service.carrier.CarrierService;
+import android.telephony.CarrierConfigManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -31,6 +33,7 @@ import java.util.regex.Pattern;
 public class DefaultCarrierConfigService extends CarrierService {
 
     private static final String SPN_EMPTY_MATCH = "null";
+    private static final String ICCID_EMPTY_MATCH = "null";
 
     private static final String CARRIER_ID_PREFIX = "carrier_config_carrierid_";
 
@@ -254,6 +257,8 @@ public class DefaultCarrierConfigService extends CarrierService {
      *   <li>spn: {@link CarrierIdentifier#getSpn}</li>
      *   <li>imsi: {@link CarrierIdentifier#getImsi}</li>
      *   <li>device: {@link Build.DEVICE}</li>
+     *   <li>vendorSku: {@link SystemConfig.VENDOR_SKU_PROPERTY}</li>
+     *   <li>hardwareSku: {@link SystemConfig.SKU_PROPERTY}</li>
      *   <li>cid: {@link CarrierIdentifier#getCarrierId()}
      *   or {@link CarrierIdentifier#getSpecificCarrierId()}</li>
      *   <li>sku: {@link R.string#sku_filter} "sku_filter" that OEM customizable filter</li>
@@ -273,6 +278,10 @@ public class DefaultCarrierConfigService extends CarrierService {
      */
     static boolean checkFilters(XmlPullParser parser, @Nullable CarrierIdentifier id, String sku) {
         boolean result = true;
+        String vendorSkuProperty = SystemProperties.get(
+            "ro.boot.product.vendor.sku", "");
+        String hardwareSkuProperty = SystemProperties.get(
+            "ro.boot.product.hardware.sku", "");
         for (int i = 0; i < parser.getAttributeCount(); ++i) {
             String attribute = parser.getAttributeName(i);
             String value = parser.getAttributeValue(i);
@@ -297,6 +306,17 @@ public class DefaultCarrierConfigService extends CarrierService {
                     break;
                 case "device":
                     result = result && value.equalsIgnoreCase(Build.DEVICE);
+                    break;
+                case "vendorSku":
+                    result = result &&
+                            value.equalsIgnoreCase(vendorSkuProperty);
+                    break;
+                case "hardwareSku":
+                    result = result &&
+                            value.equalsIgnoreCase(hardwareSkuProperty);
+                    break;
+                case "iccid":
+                    result = result && matchOnIccid(value, id);
                     break;
                 case "cid":
                     result = result && (id == null || (Integer.parseInt(value) == id.getCarrierId())
@@ -359,6 +379,25 @@ public class DefaultCarrierConfigService extends CarrierService {
             Pattern spPattern = Pattern.compile(xmlSP, Pattern.CASE_INSENSITIVE);
             Matcher matcher = spPattern.matcher(currentSP);
             matchFound = matcher.matches();
+        }
+        return matchFound;
+    }
+
+    static boolean matchOnIccid(String xmlIccid, CarrierIdentifier id) {
+        boolean matchFound = false;
+        String iccid = id.getIccid();
+        if (ICCID_EMPTY_MATCH.equalsIgnoreCase(xmlIccid)) {
+            if (TextUtils.isEmpty(iccid)) {
+                matchFound = true;
+            }
+        } else if (iccid != null) {
+            String[] iccidList = xmlIccid.split(",");
+            for (String iccidPrefix : iccidList) {
+                if (iccid.startsWith(iccidPrefix)) {
+                    matchFound = true;
+                    break;
+                }
+            }
         }
         return matchFound;
     }
